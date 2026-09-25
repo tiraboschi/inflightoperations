@@ -17,6 +17,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -140,6 +141,17 @@ func buildCSV(
 	trueVal := true
 	falseVal := false
 	gracePeriod := int64(10)
+	labels := map[string]string{
+		"app.kubernetes.io/name": "inflightoperations",
+		"control-plane":          "controller-manager",
+	}
+	// HCO-generated NetworkPolicies select pod labels. Keep these out of the
+	// Deployment selector: they are not an identity of the workload and should
+	// remain freely changeable as the HCO policy contract evolves.
+	podLabels := make(map[string]string, len(labels)+2)
+	maps.Copy(podLabels, labels)
+	podLabels["np.kubevirt.io/allow-access-cluster-services"] = "true"
+	podLabels["np.kubevirt.io/allow-prometheus-access"] = "true"
 
 	return ClusterServiceVersion{
 		APIVersion: "operators.coreos.com/v1alpha1",
@@ -205,28 +217,19 @@ func buildCSV(
 					},
 					Deployments: []StrategyDeploymentSpec{
 						{
-							Name: serviceAccountName,
-							Label: map[string]string{
-								"app.kubernetes.io/name": "inflightoperations",
-								"control-plane":          "controller-manager",
-							},
+							Name:  serviceAccountName,
+							Label: labels,
 							Spec: DeploymentSpec{
 								Replicas: 1,
 								Selector: &LabelSelector{
-									MatchLabels: map[string]string{
-										"app.kubernetes.io/name": "inflightoperations",
-										"control-plane":          "controller-manager",
-									},
+									MatchLabels: labels,
 								},
 								Template: PodTemplateSpec{
 									Metadata: PodMetadata{
 										Annotations: map[string]string{
 											"kubectl.kubernetes.io/default-container": "manager",
 										},
-										Labels: map[string]string{
-											"app.kubernetes.io/name": "inflightoperations",
-											"control-plane":          "controller-manager",
-										},
+										Labels: podLabels,
 									},
 									Spec: PodSpec{
 										ServiceAccountName:            serviceAccountName,
